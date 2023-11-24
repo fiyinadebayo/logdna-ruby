@@ -19,9 +19,7 @@ module Logdna
     attr_accessor :app, :env, :meta
 
     def initialize(key, opts = {})
-      super(nil, nil, nil)
       @app = opts[:app] || "default"
-      @log_level = opts[:level] || "INFO"
       @env = opts[:env]
       @meta = opts[:meta]
       @internal_logger = Logger.new($stdout)
@@ -43,28 +41,24 @@ module Logdna
       request.basic_auth("username", key)
       request[:'user-agent'] = opts[:'user-agent'] || "ruby/#{LogDNA::VERSION}"
       @client = Logdna::Client.new(request, uri, opts)
+
+      super(nil, nil, nil, level: opts[:level] || "INFO")
     end
 
     def default_opts
       {
         app: @app,
-        level: @log_level,
+        level: level,
         env: @env,
         meta: @meta,
       }
     end
 
-    def level
-      @log_level
-    end
-
     def level=(value)
-      if value.is_a? Numeric
-        @log_level = Resources::LOG_LEVELS[value]
-        return
-      end
+      return super(value) if value.is_a?(Integer)
+      return super(Resources::TRACE) if value.to_s.downcase == 'trace'
 
-      @log_level = value
+      super
     end
 
     def log(message = nil, opts = {})
@@ -77,8 +71,8 @@ module Logdna
       end
       message = message.to_s.encode("UTF-8")
       @client.write_to_buffer(message, default_opts.merge(opts).merge(
-                                         timestamp: (Time.now.to_f * 1000).to_i
-                                       ))
+        timestamp: (Time.now.to_f * 1000).to_i
+      ))
     end
 
     Resources::LOG_LEVELS.each do |lvl|
@@ -86,28 +80,26 @@ module Logdna
 
       define_method name do |msg = nil, opts = {}, &block|
         self.log(msg, opts.merge(
-                        level: lvl
-                      ), &block)
+          level: lvl
+        ), &block)
       end
+    end
 
-      define_method "#{name}?" do
-        return Resources::LOG_LEVELS[self.level] == lvl if level.is_a? Numeric
-
-        self.level == lvl
-      end
+    def trace?
+      level <= Resources::TRACE
     end
 
     def clear
       @app = "default"
-      @log_level = "INFO"
+      level = Resources::LOG_LEVELS[1]
       @env = nil
       @meta = nil
     end
 
     def <<(msg = nil, opts = {})
       log(msg, opts.merge(
-                 level: ""
-               ))
+        level: ""
+      ))
     end
 
     def add(*_arg)
@@ -117,8 +109,8 @@ module Logdna
 
     def unknown(msg = nil, opts = {})
       log(msg, opts.merge(
-                 level: "UNKNOWN"
-               ))
+        level: "UNKNOWN"
+      ))
     end
 
     def datetime_format(*_arg)
